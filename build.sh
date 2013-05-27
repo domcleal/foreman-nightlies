@@ -5,18 +5,10 @@ if [ $# -ne 3 ]; then
   exit 1
 fi
 
-case "$2" in
-  scl)
-    args="--scl=ruby193"
-    tag=""
-    ;;
-  nonscl)
-    args=""
-    tag="-nonscl"
-    ;;
-  *)
-    exit 1
-esac
+repo=$1
+scl=$2
+date=$3
+[ -z "$date" ] && date=$(date +%Y%m%d%H%M)
 
 set -xe
 
@@ -27,10 +19,8 @@ TEMPDIR=$(mktemp -d)
 trap "rm -rf $TEMPDIR" EXIT 
 mkdir $TEMPDIR/repo
 
-git clone -b develop https://github.com/theforeman/$1 $TEMPDIR/repo
+git clone -b develop https://github.com/theforeman/$repo $TEMPDIR/repo
 cd $TEMPDIR/repo
-date=$3
-[ -z "$date" ] && date=$(date +%Y%m%d%H%M)
 gitrev=$(git rev-parse --short HEAD)
 release="${date}git${gitrev}"
 
@@ -45,11 +35,27 @@ sed -i "/^Release:/ s/%/.${release}%/" *.spec
 
 EDITOR=/bin/cat tito tag --keep-version --auto-changelog-message="Automatic nightly build of ${gitrev}"
 
-tito build --offline --srpm --dist=.el6 $args > $TEMPDIR/tito.out
-srpm=$(tail -n1 $TEMPDIR/tito.out | sed "s/^Wrote: //g")
-[ -e $srpm ]
+for osbuild in "rhel6:el6:scl" "fedora18:fc18:nonscl"; do
+  os=$(echo $osbuild | cut -d: -f1)
+  dist=$(echo $osbuild | cut -d: -f2)
+  osscl=$(echo $osbuild | cut -d: -f3)
 
-koji -c ~/.koji/katello-config build foreman-nightly${tag}-rhel6 $srpm
-rm -f $srpm
+  tag=""
+  args=""
+  if [ $osscl = scl ]; then
+    if [ $scl = scl ]; then
+      args="--scl=ruby193"
+    else
+      tag="-nonscl"
+    fi
+  fi
+
+  tito build --offline --srpm --dist=.${dist} $args > $TEMPDIR/tito.out
+  srpm=$(tail -n1 $TEMPDIR/tito.out | sed "s/^Wrote: //g")
+  [ -e $srpm ]
+
+  koji -c ~/.koji/katello-config build foreman-nightly${tag}-${os} $srpm
+  rm -f $srpm
+done
 
 touch $state/${1}-${gitrev}
