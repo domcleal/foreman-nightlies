@@ -20,6 +20,7 @@ run() {
 
 run foreman scl
 run foreman-installer nonscl
+run foreman-selinux nonscl
 run smart-proxy nonscl
 
 find logs -name "*.log.*" -mtime +14 -delete
